@@ -1,0 +1,759 @@
+
+
+
+
+
+
+
+
+# File: python/fgp_lgp_egp.py
+# License: MIT (recommend placing a full LICENSE file at repo root)
+# -----------------------------------------------------------------------------
+# Purpose
+# -------
+# This module provides minimal, reusable reference stubs for the three modules:
+#   - FGP: Fourier-Guided Preprocessing
+#   - LGP: Laplace-Guided Preprocessing
+#   - EGP: Entropy-Guided Preprocessing
+#
+# These functions intentionally avoid domain assumptions. They expose three
+# domain hooks:
+#   (1) signalize(instance) -> np.ndarray
+#       Map a problem instance into a numeric signal (1D/ND allowed; 1D shown).
+#   (2) discretize(signal, params) -> instance'
+#       Map a (modified) numeric signal back to a valid discrete instance.
+#   (3) guard(instance') -> bool
+#       Enforce combinatorial semantics (e.g., clause length, k-uniformity).
+#
+# Scope
+# -----
+# - Not a full implementation. The goal is a portable, language-agnostic
+#   specification with minimal code to encourage reproduction and adaptation.
+# - FFT normalization conventions, entropy definitions, and masking policies
+#   are left to the user. Document these choices for reproducibility.
+#
+# Determinism & Reproducibility
+# -----------------------------
+# - A fixed RNG seed is accepted and should be used for any randomized step.
+# - If FFT library scales differently on forward/inverse operations, document
+#   where 1/N is applied to ensure consistency across languages.
+#
+# Complexity
+# ----------
+# - FGP is dominated by FFT: O(N log N) for a length-N signal.
+# - LGP diffusion is O(N * steps).
+# - EGP depends on the entropy routine; simple histogram windows are typically
+#   O(N * W), where W is window size (if used).
+# -----------------------------------------------------------------------------
+
+from typing import Callable, Tuple, Dict, Any, Optional
+import numpy as np
+
+# Domain hooks (user-provided callables)
+SignalizeFn  = Callable[[Any], np.ndarray]
+DiscretizeFn = Callable[[np.ndarray, Dict[str, Any]], Any]
+GuardFn      = Callable[[Any], bool]
+
+# -----------------------------------------------------------------------------#
+# Fourier-Guided Preprocessing (FGP)
+# -----------------------------------------------------------------------------#
+def fgp_transform(
+    instance: Any,
+    signalize: SignalizeFn,
+    discretize: DiscretizeFn,
+    guard: GuardFn,
+    band: Tuple[str, float, float] = ("low", 0.0, 10.0),
+    mask_type: str = "soft",
+    threshold: Optional[Dict[str, Any]] = None,
+    seed: int = 42,
+) -> Tuple[Any, Dict[str, Any]]:
+    """
+    FGP reference stub.
+
+    Pipeline (module-internal template):
+      1) signalize: instance -> numeric signal s
+      2) forward operator: DFT(s) -> S
+      3) guided modification: S_t = Phi_alpha(S)  (band/strength policy)
+      4) inverse operator: s_inv = IDFT(S_t)
+      5) discretize & remap: s_inv -> instance'
+      6) guard: assert combinatorial semantics
+
+    Parameters
+    ----------
+    band : (name, f_lo, f_hi)
+        Band policy; examples: ("low", 0, f_hi), ("high", f_lo, Nyquist).
+    mask_type : {"soft","hard"}
+        "soft" may apply smooth attenuation; "hard" may zero-out bins.
+    threshold : dict or None
+        Parameters for discretization (e.g., rounding mode, cutoffs).
+    seed : int
+        Seed for any randomized behavior (if introduced by user code).
+
+    Returns
+    -------
+    (instance_prime, report)
+        instance_prime : transformed instance after discretization/remap
+        report         : dict with method metadata (seed, params, etc.)
+
+    Notes
+    -----
+    - FFT normalization can differ across libraries. If numpy is used with
+      np.fft.fft/ifft, inverse scaling by 1/N occurs in ifft. If you switch
+      libraries, keep the convention consistent across languages.
+    """
+    rng = np.random.default_rng(seed)
+
+    # (1) Domain-specific encoding: user must define this.
+    s = signalize(instance)  # shape: (N,), dtype: float or complex
+
+    # (2) Forward DFT
+    S = np.fft.fft(s)
+
+    # (3) Guided mask in frequency domain (policy is user-extensible)
+    S_t = _guided_mask(S, band=band, mode=mask_type)
+
+    # (4) Inverse transform back to time/structure domain
+    s_inv = np.fft.ifft(S_t).real  # if complex, we take the real part
+
+    # (5) Discretize and remap to a valid combinatorial instance
+    inst_p = discretize(s_inv, threshold or {})
+
+    # (6) Semantics guard to ensure constraints are preserved
+    if not guard(inst_p):
+        raise ValueError("Combinatorial semantics violated by FGP output.")
+
+    report = {
+        "method": "FGP",
+        "seed": seed,
+        "band": band,
+        "mask_type": mask_type,
+        "notes": "Reference stub; define _guided_mask/discretize/guard per domain."
+    }
+    return inst_p, report
+
+
+def _guided_mask(S: np.ndarray,
+                 band: Tuple[str, float, float],
+                 mode: str) -> np.ndarray:
+    """
+    Placeholder for frequency-domain masking.
+
+    Parameters
+    ----------
+    S : np.ndarray (complex)
+        DFT coefficients.
+    band : (name, f_lo, f_hi)
+        Policy descriptor; user defines exact mapping from (f_lo,f_hi) to bins.
+    mode : {"soft","hard"}
+        - "soft": smoothly attenuate (e.g., raised-cosine in transition bands).
+        - "hard": zero out bins outside the pass band.
+
+    Returns
+    -------
+    np.ndarray
+        Modified DFT coefficients. Default: identity (no change).
+    """
+    # TODO (user): Implement frequency-bin mapping and attenuation.
+    return S
+
+
+# -----------------------------------------------------------------------------#
+# Laplace-Guided Preprocessing (LGP)
+# -----------------------------------------------------------------------------#
+def lgp_transform(
+    instance: Any,
+    signalize: SignalizeFn,
+    discretize: DiscretizeFn,
+    guard: GuardFn,
+    steps: int = 1,
+    alpha: float = 0.2,
+    seed: int = 42,
+) -> Tuple[Any, Dict[str, Any]]:
+    """
+    LGP reference stub (1D diffusion illustration).
+
+    Idea
+    ----
+    Apply a discrete Laplacian-based smoothing (diffusion) to reduce high
+    curvature/oscillation in the encoded signal, then discretize back. For
+    graph/hypergraph instances, generalize the Laplacian to the relevant
+    topology (combinatorial/normalized Laplacian).
+
+    Parameters
+    ----------
+    steps : int
+        Number of diffusion iterations.
+    alpha : float
+        Diffusion strength (0 < alpha << 1 recommended).
+    seed : int
+        RNG seed for any randomized variation.
+
+    Caution
+    -------
+    Excessive smoothing can harm combinatorial semantics. Always validate
+    with guard().
+    """
+    rng = np.random.default_rng(seed)
+    x = signalize(instance).astype(float)
+
+    for _ in range(steps):
+        lap = np.roll(x, 1) - 2.0 * x + np.roll(x, -1)   # 1D Laplacian
+        x = x + alpha * lap
+
+    inst_p = discretize(x, {})
+    if not guard(inst_p):
+        raise ValueError("Combinatorial semantics violated by LGP output.")
+
+    report = {"method": "LGP", "seed": seed, "steps": steps, "alpha": alpha}
+    return inst_p, report
+
+
+# -----------------------------------------------------------------------------#
+# Entropy-Guided Preprocessing (EGP)
+# -----------------------------------------------------------------------------#
+def egp_transform(
+    instance: Any,
+    signalize: SignalizeFn,
+    discretize: DiscretizeFn,
+    guard: GuardFn,
+    entropy_budget: float = 0.3,
+    target_balance: float = 0.5,
+    seed: int = 42,
+) -> Tuple[Any, Dict[str, Any]]:
+    """
+    EGP reference stub.
+
+    Idea
+    ----
+    Compute local/global imbalance/uncertainty measures (entropy-like signals)
+    and adjust the structure to reduce pathological concentration or bias,
+    while preserving discrete semantics.
+
+    Parameters
+    ----------
+    entropy_budget : float in [0,1]
+        Upper bound on total adjustment magnitude (safety limiter).
+    target_balance : float in [0,1]
+        Desired balance metric (e.g., 0.5 for polarity balance).
+    seed : int
+        RNG seed for controlled stochastic adjustments (if any).
+
+    Notes
+    -----
+    - The exact entropy functional is domain-dependent (Shannon entropy on
+      local histograms, polarity balance entropy, etc.).
+    - Users should document the entropy definition and its window/scale.
+    """
+    rng = np.random.default_rng(seed)
+    s = signalize(instance)
+    s_adj = _entropy_guided_adjust(s, entropy_budget, target_balance)
+    inst_p = discretize(s_adj, {})
+    if not guard(inst_p):
+        raise ValueError("Combinatorial semantics violated by EGP output.")
+    report = {
+        "method": "EGP",
+        "seed": seed,
+        "entropy_budget": entropy_budget,
+        "target_balance": target_balance
+    }
+    return inst_p, report
+
+
+def _entropy_guided_adjust(s: np.ndarray,
+                           budget: float,
+                           target: float) -> np.ndarray:
+    """
+    Placeholder for entropy-guided adjustment.
+
+    Strategy (illustrative)
+    -----------------------
+    1) Define an imbalance/uncertainty score per location (domain-specific).
+    2) Compute adjustments bounded by `budget`.
+    3) Preserve invariants (sum, parity, counts) if required by the domain.
+
+    Returns
+    -------
+    np.ndarray
+        Adjusted signal. Default: identity (no change).
+    """
+    # TODO (user): Implement domain-specific entropy policy and constraints.
+    return s
+
+
+
+
+
+
+
+
+// File: java/src/main/java/org/changbal/pre/PreTypes.java
+// License: MIT
+// -----------------------------------------------------------------------------
+// Purpose
+// -------
+// Language-level interfaces and a configuration carrier for FGP/LGP/EGP.
+// Domain users provide three hooks: Signalize, Discretize, Guard.
+//
+// Usage pattern
+// -------------
+//   var out = FGP.transform(inst, signalize, discretize, guard, cfg);
+//   // same for LGP/EGP
+//
+// Reproducibility
+// ---------------
+// - The FFT library (e.g., JTransforms) has defined scaling conventions.
+//   If you need exact numeric parity with other languages, ensure where 1/N
+//   scaling is applied (forward or inverse) and document it.
+//
+// Error handling
+// --------------
+// - Guard failure throws IllegalArgumentException (fail-fast).
+// -----------------------------------------------------------------------------
+package org.changbal.pre;
+
+public interface Signalize<T>  { double[] apply(T in); }
+public interface Discretize<T> { T apply(double[] x); }
+public interface Guard<T>      { boolean ok(T in); }
+
+public final class Config {
+  // Shared
+  public long seed = 42L;
+
+  // FGP
+  public String band = "low";    // policy label (user-defined)
+  public double fLo = 0.0;       // lower cutoff (Hz or bin index proxy)
+  public double fHi = 10.0;      // upper cutoff
+  public boolean softMask = true;
+
+  // LGP
+  public int steps = 1;          // diffusion steps
+  public double alpha = 0.2;     // diffusion strength
+
+  // EGP
+  public double entropyBudget = 0.3;
+  public double targetBalance  = 0.5;
+}
+
+
+
+// File: java/FGP.java
+// License: MIT
+// -----------------------------------------------------------------------------
+// Fourier-Guided Preprocessing (FGP) — reference stub.
+//
+// Steps:
+//   (1) signalize -> double[] s
+//   (2) forward DFT -> complex array S
+//   (3) guided mask in frequency domain
+//   (4) inverse transform (ensure consistent 1/N scaling policy)
+//   (5) discretize -> instance'
+//   (6) guard(instance')
+//
+// Notes:
+// - JTransforms packs real/imag in an interleaved double[] for complex arrays.
+// - The user must implement guidedMaskInPlace according to (band, fLo, fHi).
+// -----------------------------------------------------------------------------
+package org.changbal.pre;
+
+import edu.emory.mathcs.jtransforms.fft.DoubleFFT_1D;
+import java.util.Arrays;
+
+public final class FGP {
+  private FGP() {}
+
+  public static <T> T transform(
+      T instance,
+      Signalize<T> signalize,
+      Discretize<T> discretize,
+      Guard<T> guard,
+      Config cfg
+  ) {
+    // (1) Domain-specific encoding
+    double[] s = signalize.apply(instance);
+    int N = s.length;
+
+    // (2) Forward DFT (real -> full complex)
+    DoubleFFT_1D fft = new DoubleFFT_1D(N);
+    double[] S = new double[2 * N];
+    Arrays.fill(S, 0.0);
+    System.arraycopy(s, 0, S, 0, N);
+    fft.realForwardFull(S); // Output: interleaved complex [Re0, Im0, Re1, Im1, ...]
+
+    // (3) Guided mask in frequency domain (user policy)
+    guidedMaskInPlace(S, cfg.band, cfg.fLo, cfg.fHi, cfg.softMask);
+
+    // (4) Inverse transform
+    //    JTransforms expects complexInverse(data, scale). If scale=true, it
+    //    divides by N internally. This must match your cross-language policy.
+    fft.complexInverse(S, true);
+
+    // Convert back to a real signal for discretization (drop imaginary part).
+    double[] x = new double[N];
+    for (int k = 0; k < N; k++) x[k] = S[2 * k]; // take Re component
+
+    // (5) Discretize & remap to a valid instance
+    T out = discretize.apply(x);
+
+    // (6) Guard combinatorial semantics
+    if (!guard.ok(out)) {
+      throw new IllegalArgumentException("Combinatorial semantics violated by FGP output.");
+    }
+    return out;
+  }
+
+  private static void guidedMaskInPlace(double[] S, String band,
+                                        double fLo, double fHi, boolean soft) {
+    // TODO (user): Map (fLo,fHi) to indices in the interleaved complex layout.
+    //   Example policy:
+    //   - If "low", attenuate bins above fHi.
+    //   - If "high", attenuate bins below fLo.
+    //   - If "custom", attenuate outside [fLo,fHi].
+    //   - soft=true: apply smooth taper; soft=false: hard zero-out.
+  }
+}
+
+
+
+// File: java/LGP.java
+// License: MIT
+// -----------------------------------------------------------------------------
+// Laplace-Guided Preprocessing (LGP) — reference stub (1D illustration).
+//
+// Idea:
+// - Apply discrete diffusion using a 1D Laplacian. For graphs/hypergraphs,
+//   replace with the appropriate Laplacian operator on the topology.
+//
+// Caution:
+// - Excessive smoothing may destroy discrete semantics; guard() must pass.
+// -----------------------------------------------------------------------------
+package org.changbal.pre;
+
+public final class LGP {
+  private LGP() {}
+
+  public static <T> T transform(
+      T instance,
+      Signalize<T> signalize,
+      Discretize<T> discretize,
+      Guard<T> guard,
+      Config cfg
+  ) {
+    double[] x = signalize.apply(instance).clone();
+    int N = x.length;
+
+    for (int it = 0; it < cfg.steps; it++) {
+      double[] next = new double[N];
+      for (int k = 0; k < N; k++) {
+        double prev = x[(k - 1 + N) % N];
+        double curr = x[k];
+        double succ = x[(k + 1) % N];
+        double lap = prev - 2.0 * curr + succ;  // 1D Laplacian
+        next[k] = curr + cfg.alpha * lap;
+      }
+      x = next;
+    }
+
+    T out = discretize.apply(x);
+    if (!guard.ok(out)) {
+      throw new IllegalArgumentException("Combinatorial semantics violated by LGP output.");
+    }
+    return out;
+  }
+}
+
+
+
+
+// File: java/EGP.java
+// License: MIT
+// -----------------------------------------------------------------------------
+// Entropy-Guided Preprocessing (EGP) — reference stub.
+//
+// Idea:
+// - Define an entropy/imbalance signal over structure (domain-dependent).
+// - Adjust the encoded signal under an "entropy budget" and constraints.
+// - Preserve invariants required by the discrete instance (via guard()).
+//
+// Notes:
+// - This stub does not impose a particular entropy functional (Shannon,
+//   polarity entropy, degree-distribution entropy, etc.). Document your choice.
+// -----------------------------------------------------------------------------
+package org.changbal.pre;
+
+public final class EGP {
+  private EGP() {}
+
+  public static <T> T transform(
+      T instance,
+      Signalize<T> signalize,
+      Discretize<T> discretize,
+      Guard<T> guard,
+      Config cfg
+  ) {
+    double[] s = signalize.apply(instance);
+    double[] adjusted = entropyGuidedAdjust(s, cfg.entropyBudget, cfg.targetBalance);
+
+    T out = discretize.apply(adjusted);
+    if (!guard.ok(out)) {
+      throw new IllegalArgumentException("Combinatorial semantics violated by EGP output.");
+    }
+    return out;
+  }
+
+  private static double[] entropyGuidedAdjust(double[] s, double budget, double target) {
+    // TODO (user):
+    //   1) Compute local/global entropy or imbalance metrics.
+    //   2) Propose adjustments limited by `budget`.
+    //   3) Respect invariants (sum, counts) as required by the domain.
+    return s; // identity placeholder
+  }
+}
+
+
+
+
+/* File: c/fgp_lgp_egp.h
+ * License: MIT
+ * -----------------------------------------------------------------------------
+ * Purpose
+ * -------
+ * Header for language-agnostic FGP/LGP/EGP stubs in C99.
+ * Users provide three callbacks:
+ *   - signalize(instance)  -> double* + length (heap-allocated)
+ *   - discretize(signal)   -> void* (domain instance; heap-allocated or owner-specified)
+ *   - guard(instance)      -> int (nonzero = OK)
+ *
+ * Memory ownership
+ * ----------------
+ * - Callbacks should document ownership and allocation policy.
+ * - This header assumes the returned buffers/instances are heap-allocated
+ *   by the callee; the caller is responsible for free() unless noted.
+ *
+ * FFT dependency
+ * --------------
+ * - FGP expects an FFT backend (e.g., FFTW3). If not available, either
+ *   stub out FGP or integrate a lightweight FFT (e.g., KissFFT).
+ *
+ * Error handling
+ * --------------
+ * - Functions return NULL on guard failure or unrecoverable errors.
+ * - Optional reporting via PreReport.
+ * ---------------------------------------------------------------------------*/
+
+#pragma once
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct {
+  uint64_t seed;
+  /* FGP */
+  const char* band; double f_lo, f_hi; int soft_mask;
+  /* LGP */
+  int steps; double alpha;
+  /* EGP */
+  double entropy_budget; double target_balance;
+} PreConfig;
+
+typedef struct {
+  /* Transition metrics are domain-defined; set to 0.0 if not computed. */
+  double r_star_shift, width_change, slope_change;
+  int semantics_ok;            /* 1 if guard passed; 0 otherwise */
+  double time_overhead_ratio;  /* optional: preproc_time / base_time */
+} PreReport;
+
+/* Domain hooks (user must implement elsewhere) */
+typedef double* (*signalize_fn) (const void* instance, int64_t* out_len);
+typedef void*   (*discretize_fn)(const double* sig, int64_t len);
+typedef int     (*guard_fn)     (const void* instance);
+
+/* FGP/LGP/EGP API: return new instance on success; NULL on failure. */
+void* fgp_transform(const void* instance, signalize_fn sig,
+                    discretize_fn disc, guard_fn guard,
+                    const PreConfig* cfg, PreReport* rep);
+
+void* lgp_transform(const void* instance, signalize_fn sig,
+                    discretize_fn disc, guard_fn guard,
+                    const PreConfig* cfg, PreReport* rep);
+
+void* egp_transform(const void* instance, signalize_fn sig,
+                    discretize_fn disc, guard_fn guard,
+                    const PreConfig* cfg, PreReport* rep);
+
+#ifdef __cplusplus
+}
+#endif
+
+
+
+
+/* File: c/fgp_lgp_egp.c
+ * License: MIT
+ * -----------------------------------------------------------------------------
+ * Implementation notes
+ * --------------------
+ * - This file contains minimal, domain-agnostic stubs. FGP assumes an FFT
+ *   backend; the code below leaves TODOs where an actual FFT is required.
+ * - LGP uses a 1D Laplacian for diffusion; extend to graph Laplacians as needed.
+ * - EGP leaves entropy-guided adjustment to the user (domain-dependent).
+ * - Guard failures cause the function to return NULL (fail-fast policy).
+ * ---------------------------------------------------------------------------*/
+
+#include "fgp_lgp_egp.h"
+#include <stdlib.h>
+#include <string.h>
+
+/* Optional: include your FFT backend for FGP (e.g., FFTW3) */
+// #include <fftw3.h>
+
+/* ------------------------------ Helpers ---------------------------------- */
+
+/* Map (f_lo, f_hi) policy to bins and attenuate in-place.
+ * S layout is backend-specific (complex arrays). Users must adapt this stub.
+ * For FFTW's complex layout: consider fftw_complex (double[2]).
+ */
+static void guided_mask_inplace(/*complex*/ void* S, int64_t n_bins,
+                                const char* band, double f_lo, double f_hi, int soft_mask) {
+  /* TODO (user): Implement frequency-domain attenuation policy. */
+  (void)S; (void)n_bins; (void)band; (void)f_lo; (void)f_hi; (void)soft_mask;
+}
+
+/* ------------------------------ FGP -------------------------------------- */
+
+void* fgp_transform(const void* instance, signalize_fn sig,
+                    discretize_fn disc, guard_fn guard,
+                    const PreConfig* cfg, PreReport* rep) {
+  if (!instance || !sig || !disc || !guard || !cfg) return NULL;
+
+  /* (1) signalize: domain -> numeric signal (heap-allocated) */
+  int64_t N = 0;
+  double* s = sig(instance, &N);
+  if (!s || N <= 0) return NULL;
+
+  /* (2) forward DFT: requires backend.
+   * Pseudocode using FFTW (not compiled here):
+   *
+   *   fftw_complex* S = fftw_malloc(sizeof(*S) * N);
+   *   fftw_plan p = fftw_plan_dft_r2c_1d((int)N, s, S, FFTW_ESTIMATE);
+   *   fftw_execute(p);
+   */
+  void* S = NULL; /* TODO: allocate & fill with forward FFT result */
+
+  /* (3) guided mask */
+  guided_mask_inplace(S, N, cfg->band, cfg->f_lo, cfg->f_hi, cfg->soft_mask);
+
+  /* (4) inverse DFT:
+   *   double* s_inv = calloc(N, sizeof(double));
+   *   fftw_plan q = fftw_plan_dft_c2r_1d((int)N, S, s_inv, FFTW_ESTIMATE);
+   *   fftw_execute(q);
+   *   // FFTW leaves scaling to the user; apply 1/N if needed:
+   *   for (int64_t i = 0; i < N; ++i) s_inv[i] /= (double)N;
+   */
+  double* s_inv = s; /* Placeholder: identity pass-through (no FFT). */
+
+  /* (5) discretize */
+  void* out = disc(s_inv, N);
+  if (!out) { free(s); return NULL; }
+
+  /* (6) guard */
+  int ok = guard(out);
+  if (rep) {
+    rep->semantics_ok = ok;
+    rep->r_star_shift = 0.0;
+    rep->width_change = 0.0;
+    rep->slope_change = 0.0;
+    rep->time_overhead_ratio = 0.0;
+  }
+
+  /* Ownership: s (and s_inv if allocated separately) should be freed. */
+  free(s);
+  /* If s_inv != s, free(s_inv) as well. If using FFTW, destroy plans and free S. */
+
+  if (!ok) {
+    /* User may free(out) in guard() failure case, or we can free here
+       depending on agreed ownership. We assume caller frees 'out' if needed. */
+    return NULL;
+  }
+  return out;
+}
+
+/* ------------------------------ LGP -------------------------------------- */
+
+void* lgp_transform(const void* instance, signalize_fn sig,
+                    discretize_fn disc, guard_fn guard,
+                    const PreConfig* cfg, PreReport* rep) {
+  if (!instance || !sig || !disc || !guard || !cfg) return NULL;
+
+  int64_t N = 0;
+  double* x = sig(instance, &N);
+  if (!x || N <= 0) return NULL;
+
+  /* 1D diffusion using a simple Laplacian.
+   * For graphs/hypergraphs, replace with the combinatorial/normalized Laplacian.
+   */
+  for (int it = 0; it < cfg->steps; ++it) {
+    double* next = (double*)malloc(sizeof(double) * (size_t)N);
+    if (!next) { free(x); return NULL; }
+    for (int64_t k = 0; k < N; ++k) {
+      double prev = x[(k - 1 + N) % N];
+      double curr = x[k];
+      double succ = x[(k + 1) % N];
+      double lap = prev - 2.0 * curr + succ;
+      next[k] = curr + cfg->alpha * lap;
+    }
+    free(x);
+    x = next;
+  }
+
+  void* out = disc(x, N);
+  int ok = out ? guard(out) : 0;
+
+  if (rep) {
+    rep->semantics_ok = ok;
+    rep->r_star_shift = rep->width_change = rep->slope_change = 0.0;
+    rep->time_overhead_ratio = 0.0;
+  }
+
+  free(x);
+  if (!ok) return NULL;
+  return out;
+}
+
+/* ------------------------------ EGP -------------------------------------- */
+
+void* egp_transform(const void* instance, signalize_fn sig,
+                    discretize_fn disc, guard_fn guard,
+                    const PreConfig* cfg, PreReport* rep) {
+  if (!instance || !sig || !disc || !guard || !cfg) return NULL;
+
+  int64_t N = 0;
+  double* s = sig(instance, &N);
+  if (!s || N <= 0) return NULL;
+
+  /* TODO (user): Implement entropy-guided adjustment under cfg->entropy_budget
+   * and cfg->target_balance. Preserve invariants required by the domain.
+   * This stub leaves 's' unchanged.
+   */
+  void* out = disc(s, N);
+  int ok = out ? guard(out) : 0;
+
+  if (rep) {
+    rep->semantics_ok = ok;
+    rep->r_star_shift = rep->width_change = rep->slope_change = 0.0;
+    rep->time_overhead_ratio = 0.0;
+  }
+
+  free(s);
+  if (!ok) return NULL;
+  return out;
+}
+
+
+
+
+
+
+
+
