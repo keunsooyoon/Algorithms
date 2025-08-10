@@ -1,3 +1,31 @@
+
+/**
+ * Modular Preprocessing Framework (FGP / LGP / EGP)
+ *
+ * These modules are designed to be portable, minimal, and domain-agnostic.
+ * Users are encouraged to adapt and extend them across a wide range of tasks:
+ *
+ * - Reinforcement Learning: Use EGP to reshape state distributions via entropy profiling,
+ *   improving stability and exploration.
+ * - SAT Solving: Apply FGP to suppress repetitive clause patterns, enhancing solver generalization.
+ * - Graph Learning: Use LGP to smooth noisy topologies before embedding or classification.
+ * - Constraint Programming: Preprocess variable domains to expose tractable regions.
+ * - Scheduling & Planning: Use entropy signals to rebalance overloaded constraints.
+ * - Bioinformatics: Apply FGP to genomic sequences to highlight structural motifs.
+ * - Network Analysis: Use LGP to clarify community structure in noisy graphs.
+ * - NLP: Use EGP to normalize token distributions in sparse or imbalanced corpora.
+ * - Image Processing: Apply FGP to filter spatial frequency bands before segmentation.
+ * - Time Series Forecasting: Use LGP to denoise irregular signals prior to modeling.
+ * - Game AI: Use EGP to detect phase transitions in strategic state spaces.
+ * - Cybersecurity: Apply entropy-based profiling to detect anomalous patterns.
+ *
+ * These modules are not complete solutions—they are structural lenses.
+ * Customize the signalization, discretization, and semantic guards to fit your domain.
+ * Transformation precedes computation: reshape the problem before solving it.
+ */
+
+
+
 Preprocessing Methods Overview
 
 1. Python
