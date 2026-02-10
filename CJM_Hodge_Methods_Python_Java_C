@@ -1,0 +1,258 @@
+/******************************************************************************
+ * 
+ * CJM–Hodge Structural Admissibility Framework
+ * (Portable Multi-Language Reference Stub: Python / Java / C)
+ * https://allthingsarep.com/
+ * ---------------------------------------------------------------------------
+ * Philosophy
+ * ---------------------------------------------------------------------------
+ * This framework does NOT compute solutions. It evaluates structural
+ * admissibility. Transformation precedes computation.
+ *
+ * CJM–Hodge treats realizability as structural stability under global
+ * coherence constraints rather than symbolic construction.
+ *
+ * Stability is intentionally defined in a LOOSE and domain-agnostic manner:
+ *
+ *   Stability := invariance under admissible perturbation
+ *
+ * Possible domain-specific realizations include:
+ *
+ *   • Spectral stability           : x^T L x  (Laplacian form)
+ *   • Topological persistence      : Betti number proxy
+ *   • Energy basin curvature       : local Hessian / curvature
+ *   • Lyapunov-like invariant      : structural energy
+ *   • Noise robustness             : perturbation response (default)
+ *
+ * The framework remains intentionally open to allow implementation across:
+ * mathematics, physics, biology, networks, AI, and abstract structural systems.
+ *
+ * ---------------------------------------------------------------------------
+ * Atemporal Principle
+ * ---------------------------------------------------------------------------
+ * CJM operates without temporal iteration. All operators evaluate structural
+ * coherence in a non-sequential, atemporal manner.
+ *
+ * Neighborhood operations (e.g., np.roll) represent STRUCTURAL adjacency,
+ * NOT time evolution.
+ *
+ * ---------------------------------------------------------------------------
+ * Closure Principle
+ * ---------------------------------------------------------------------------
+ * Closure measures whether a configuration converges toward global coherence.
+ * Implementations may use:
+ *   - Spectral Laplacian L
+ *   - Betti persistence proxy
+ *   - Structural energy gradient
+ *
+ * ---------------------------------------------------------------------------
+ * Singularity Hint
+ * ---------------------------------------------------------------------------
+ * Structural energy may exhibit peak behavior near admissibility threshold:
+ *
+ *        r(σ) ≈ exp(-||σ - σ*||² / ε)
+ *
+ * Implementations may optionally detect this peak to identify structural
+ * transition boundaries.
+ *
+ ******************************************************************************/
+
+==============================
+PYTHON REFERENCE IMPLEMENTATION
+==============================
+
+# File: python/cjm_hodge_stub.py
+# License: MIT
+
+import numpy as np
+from typing import Any, Dict, Tuple
+
+def cjm_hodge_evaluate(signal: np.ndarray,
+                       epsilon: float = 1e-6,
+                       noise_scale: float = 1e-3,
+                       seed: int = 42) -> Tuple[float, Dict[str, Any]]:
+    """
+    CJM–Hodge Structural Admissibility Evaluation (Reference Stub)
+
+    Parameters
+    ----------
+    signal : np.ndarray
+        Structural encoding of configuration
+    epsilon : float
+        Singularity sharpness parameter
+    noise_scale : float
+        Small perturbation scale for stability testing
+    seed : int
+        Deterministic pseudo-noise seed
+
+    Returns
+    -------
+    admissibility_score : float
+    report : dict
+    """
+
+    rng = np.random.default_rng(seed)
+
+    # ------------------------------------------------------------
+    # Closure Operator (structural coherence)
+    # ------------------------------------------------------------
+    # NOTE:
+    # Users may replace this with:
+    #   - Spectral Laplacian: x^T L x
+    #   - Betti persistence proxy
+    #   - Structural energy gradient
+    #
+    grad = np.gradient(signal)
+    closure = 1.0 / (1.0 + np.linalg.norm(grad))
+
+    # Optional singularity-like energy peak (r(σ))
+    sigma_star = np.mean(signal)
+    energy_peak = np.exp(-np.linalg.norm(signal - sigma_star)**2 / epsilon)
+
+    # ------------------------------------------------------------
+    # Atemporal Coherence Metric
+    # ------------------------------------------------------------
+    # IMPORTANT:
+    # np.roll represents STRUCTURAL adjacency, not temporal ordering.
+    #
+    coherence = np.mean(np.abs(signal - np.roll(signal, 1)))
+
+    # ------------------------------------------------------------
+    # Stability Metric (Loose / Noise-Robust)
+    # ------------------------------------------------------------
+    noise = rng.normal(0, noise_scale, size=signal.shape)
+    perturbed = signal + noise
+
+    grad_p = np.gradient(perturbed)
+    closure_p = 1.0 / (1.0 + np.linalg.norm(grad_p))
+
+    stability = 1.0 - abs(closure - closure_p)
+
+    # ------------------------------------------------------------
+    # Final Admissibility
+    # ------------------------------------------------------------
+    admissibility = closure * stability * energy_peak / (1.0 + coherence)
+
+    report = {
+        "closure": float(closure),
+        "stability": float(stability),
+        "coherence": float(coherence),
+        "energy_peak": float(energy_peak),
+        "atemporal": True
+    }
+
+    return float(admissibility), report
+
+
+==============================
+JAVA REFERENCE IMPLEMENTATION
+==============================
+
+// File: java/CJMHodgeStub.java
+// License: MIT
+
+import java.util.Random;
+
+public class CJMHodgeStub {
+
+    public static class Result {
+        public double admissibility;
+        public double closure;
+        public double stability;
+        public double coherence;
+        public double energyPeak;
+    }
+
+    public static Result evaluate(double[] signal, double epsilon, double noiseScale, long seed) {
+        Result r = new Result();
+        Random rng = new Random(seed);
+
+        double gradNorm = 0.0;
+        for (int i = 1; i < signal.length; i++) {
+            double g = signal[i] - signal[i - 1];
+            gradNorm += g * g;
+        }
+        gradNorm = Math.sqrt(gradNorm);
+
+        r.closure = 1.0 / (1.0 + gradNorm);
+
+        double mean = 0.0;
+        for (double v : signal) mean += v;
+        mean /= signal.length;
+
+        double energy = 0.0;
+        for (double v : signal) {
+            double d = v - mean;
+            energy += d * d;
+        }
+        r.energyPeak = Math.exp(-energy / epsilon);
+
+        double coherence = 0.0;
+        for (int i = 1; i < signal.length; i++) {
+            coherence += Math.abs(signal[i] - signal[i - 1]);
+        }
+        r.coherence = coherence / signal.length;
+
+        double[] perturbed = signal.clone();
+        for (int i = 0; i < perturbed.length; i++) {
+            perturbed[i] += rng.nextGaussian() * noiseScale;
+        }
+
+        double gradNormP = 0.0;
+        for (int i = 1; i < perturbed.length; i++) {
+            double g = perturbed[i] - perturbed[i - 1];
+            gradNormP += g * g;
+        }
+        gradNormP = Math.sqrt(gradNormP);
+
+        double closureP = 1.0 / (1.0 + gradNormP);
+        r.stability = 1.0 - Math.abs(r.closure - closureP);
+
+        r.admissibility = r.closure * r.stability * r.energyPeak / (1.0 + r.coherence);
+        return r;
+    }
+}
+
+
+==============================
+C REFERENCE IMPLEMENTATION
+==============================
+
+/* File: c/cjm_hodge_stub.c */
+/* License: MIT */
+
+#include <math.h>
+#include <stdlib.h>
+
+double stabilityMetric(double closure, double closureP) {
+    /* Optional: introduce deterministic pseudo-noise for variability testing */
+    return 1.0 - fabs(closure - closureP);
+}
+
+double evaluate_cjm_hodge(double* signal, int N, double epsilon) {
+
+    double gradNorm = 0.0;
+    for (int i = 1; i < N; i++) {
+        double g = signal[i] - signal[i-1];
+        gradNorm += g*g;
+    }
+    gradNorm = sqrt(gradNorm);
+
+    double closure = 1.0 / (1.0 + gradNorm);
+
+    double mean = 0.0;
+    for (int i = 0; i < N; i++) mean += signal[i];
+    mean /= N;
+
+    double energy = 0.0;
+    for (int i = 0; i < N; i++) {
+        double d = signal[i] - mean;
+        energy += d*d;
+    }
+    double energyPeak = exp(-energy / epsilon);
+
+    double closureP = closure * (1.0 - 0.01);  // lightweight perturbation proxy
+    double stability = stabilityMetric(closure, closureP);
+
+    return closure * stability * energyPeak;
+}
